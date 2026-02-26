@@ -1,40 +1,75 @@
-# OpenClaw Skill: Claude Code
+# OpenClaw Skill: Secure Claude CLI
 
-A specialized [OpenClaw](https://openclaw.ai) skill for controlling Antropic's **Claude Code CLI** (`claude`) as a sub-agent.
+A hardened [OpenClaw](https://openclaw.ai) skill for running Anthropic **Claude Code CLI** (`claude`) in a safe, non-interactive way.
 
-## Overview
+## What this skill solves
 
-This skill transforms your OpenClaw agents into expert DevOps and Fullstack operators capable of using Claude Code for autonomous coding tasks, terminal-based development, and complex refactorings.
+The default `claude` command starts an interactive REPL, which can block/lock automations.
+This skill enforces one-shot and background patterns so OpenClaw agents can run coding tasks reliably.
 
-## Features
+## Core Principles
 
-- **Standardized Workflow**: Optimized commands for navigating, launching, and interacting with the `claude` CLI.
-- **Deep CLI Integration**: Built-in reference for all major Claude Code shortcuts (`!`, `@`, `&`, etc.) and slash-commands (`/compact`, `/context`, `/doctor`).
-- **Safety First**: Explicit strategies for validation and confirmation before critical system changes.
-- **Token Efficiency**: Pre-defined usage of `/compact` and session management to keep performance high.
+- **Never run `claude` alone** (no interactive REPL in automation flows)
+- **Always use `-p`** for one-shot prompts
+- **Use `timeout` for sync runs** to avoid indefinite hangs
+- **Use `tmux` + logfile for long jobs**
+- **Restrict scope with `--allowedTools`** when needed
+- **No external log/code exfiltration** unless explicitly requested by the user
 
-## Installation
+## Quick Usage
 
-Packaged skills can be installed via the OpenClaw CLI:
+### 1) Synchronous (quick/scoped)
 
 ```bash
-openclaw skill install claude-code.skill [--target agent-id]
+timeout 300 claude -p "Refactor src/auth.js to use JWT" --cwd /path/to/project
 ```
 
-## Usage
+Scoped tools example:
 
-Once installed, trigger the skill by mentioning coding tasks or specifically requesting the use of the Claude Code CLI.
+```bash
+timeout 300 claude -p "Add JSDoc to src/utils.js" \
+  --cwd /path/to/project \
+  --allowedTools "Read,Write,Edit"
+```
 
-### Basic Workflow
-1. **Navigate**: Go to your project folder.
-2. **Launch**: The agent starts `claude`.
-3. **Tasking**: Provide high-level goals; the agent will use Claude Code to execute them.
+Machine-readable output:
 
-## Strategies
+```bash
+timeout 300 claude -p "List all TODO comments" \
+  --cwd /path/to/project \
+  --output-format json
+```
 
-- **Exploration**: Uses `@` indexing for project-wide understanding.
-- **Precision**: Prompting follow the schema: `"[Action] in [File], ensure [Condition]"`.
-- **Validation**: Uses `/review` after major changes.
+### 2) Asynchronous (long-running)
+
+```bash
+tmux new-session -d -s claude-bg-task \
+  "claude -p 'Build a new dashboard component in React' --cwd /path/to/project > /path/to/project/claude-run.log 2>&1"
+```
+
+Check progress:
+
+```bash
+tail -n 20 /path/to/project/claude-run.log
+```
+
+Check running status:
+
+```bash
+tmux has-session -t claude-bg-task 2>/dev/null; echo "Exit: $?"
+# 0 = running, 1 = finished/not found
+```
+
+## Error Handling
+
+- On transient API/rate-limit errors: wait 60s and retry once.
+- On timeout (`124`): treat as too complex for sync; switch to async `tmux` pattern.
+- On repeated failure: report exact command + last 20 logfile lines.
+
+## Files
+
+- `SKILL.md` → canonical behavior/instructions used by OpenClaw
+- `references/cli-reference.md` → optional CLI command reference
 
 ---
-Created for use with OpenClaw. "Siri's competent cousin."
+Built for practical, production-safe Claude Code delegation in OpenClaw.
